@@ -42,15 +42,39 @@ func isNice(s string) bool {
 	return vowelCount >= 3 && hasDouble
 }
 
-// DayFive runs the calculations for the Day Five puzzle
-func DayFive(p *puzzle.Puzzle) {
-	count := 0
-	for _, s := range strings.Split(dayfiveinput, "\n") {
-		if !isNaughty(s) && isNice(s) {
-			count++
+func newIsNice(s string) bool {
+	hasDoubleDouble := false
+	hasSkipover := false
+	for i := 0; i < len(s)-1; i++ {
+		subStr := s[i : i+2]
+		if strings.Count(s, subStr) >= 2 {
+			hasDoubleDouble = true
+			break
 		}
 	}
-	p.AddSolution(strconv.Itoa(count))
+	for i := 0; i < len(s)-2; i++ {
+		if s[i] == s[i+2] {
+			hasSkipover = true
+			break
+		}
+	}
+	return hasDoubleDouble && hasSkipover
+}
+
+// DayFive runs the calculations for the Day Five puzzle
+func DayFive(p *puzzle.Puzzle) {
+	countOne := 0
+	countTwo := 0
+	for _, s := range strings.Split(dayfiveinput, "\n") {
+		if !isNaughty(s) && isNice(s) {
+			countOne++
+		}
+		if newIsNice(s) {
+			countTwo++
+		}
+	}
+	p.AddSolution(strconv.Itoa(countOne))
+	p.AddSolution(strconv.Itoa(countTwo))
 }
 
 const dayfiveinput = `uxcplgxnkwbdwhrp
