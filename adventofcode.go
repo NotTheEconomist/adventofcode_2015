@@ -10,7 +10,7 @@ import (
 	"github.com/nottheeconomist/adventofcode_2015/puzzle"
 )
 
-const puzzleCount = 5 // how many puzzles do we have?
+const puzzleCount = 6 // how many puzzles do we have?
 const barWidth = 60   // barWidth of the loading bar
 
 var wg sync.WaitGroup // waits for all exercises to complete before going on
@@ -67,6 +67,7 @@ func main() {
 	initPuzzle(3, exercises.DayThree, &puzzles)
 	initPuzzle(4, exercises.DayFour, &puzzles)
 	initPuzzle(5, exercises.DayFive, &puzzles)
+	initPuzzle(6, exercises.DaySix, &puzzles)
 
 	quit := make(chan bool)
 	go loading(barWidth, quit)
