@@ -15,27 +15,42 @@ var logger *log.Logger
 type Node struct {
 	// upstream and downstream are the connections coming into and going out of the Node.
 	name       string
-	upstream   []chan int16
-	downstream []chan int16
+	upstream   []chan uint16
+	downstream []chan uint16
 
 	// f is the function to apply to the signal.
-	f func(...int16) int16
+	f func(...uint16) uint16
 }
 
 // RegisterUpstream registers an upstream connection
-func (n *Node) RegisterUpstream(ch chan int16) {
+func (n *Node) RegisterUpstream(ch chan uint16) {
 	n.upstream = append(n.upstream, ch)
-	logger.Printf("Adding to upstream on %s\n", n.name)
+
+	var name string
+	if n.name != "" {
+		name = n.name
+	} else {
+		name = "gate"
+	}
+	logger.Printf("Adding to upstream on %s\n", name)
 }
 
 // RegisterDownstream registers a downstream connection
-func (n *Node) RegisterDownstream(ch chan int16) {
+func (n *Node) RegisterDownstream(ch chan uint16) {
 	n.downstream = append(n.downstream, ch)
+
+	var name string
+	if n.name != "" {
+		name = n.name
+	} else {
+		name = "gate"
+	}
+	logger.Printf("Adding to downstream on %s\n", name)
 }
 
 // Start begins operations on the Node, effectively "Starting" the signal
 func (n *Node) Start() {
-	var result int16
+	var result uint16
 	if len(n.upstream) == 0 {
 		logger.Printf("%s has no upstream, sending nothing", n.name)
 		logger.Println(*n)
@@ -57,7 +72,7 @@ func (n *Node) Start() {
 }
 
 // Binary functions
-func pass(inputs ...int16) int16 {
+func pass(inputs ...uint16) uint16 {
 	// pass automatically through
 	if len(inputs) != 1 {
 		panic("Input to pass is wrong")
@@ -65,28 +80,28 @@ func pass(inputs ...int16) int16 {
 	return inputs[0]
 }
 
-func and(inputs ...int16) int16 {
+func and(inputs ...uint16) uint16 {
 	if len(inputs) != 2 {
 		panic("Input to and is wrong")
 	}
 	return inputs[0] & inputs[1]
 }
 
-func or(inputs ...int16) int16 {
+func or(inputs ...uint16) uint16 {
 	if len(inputs) != 2 {
 		panic("Input to or is wrong")
 	}
 	return inputs[0] | inputs[1]
 }
 
-func not(inputs ...int16) int16 {
+func not(inputs ...uint16) uint16 {
 	if len(inputs) != 1 {
 		panic("Input to not is wrong")
 	}
 	return ^inputs[0]
 }
 
-func lshift(inputs ...int16) int16 {
+func lshift(inputs ...uint16) uint16 {
 	if len(inputs) != 2 {
 		panic("Input to lshift is wrong")
 	}
@@ -94,7 +109,7 @@ func lshift(inputs ...int16) int16 {
 	return a << n
 }
 
-func rshift(inputs ...int16) int16 {
+func rshift(inputs ...uint16) uint16 {
 	if len(inputs) != 2 {
 		panic("Input to pass is wrong")
 	}
@@ -104,14 +119,98 @@ func rshift(inputs ...int16) int16 {
 
 // GetNode returns the *Node stored at name in nodeMap, if it exists. If it does
 // not, then it creates a *Node, stores its reference in nodeMap, and returns it.
+// Providing an empty name will not store the Node
 func GetNode(name string, nodesMap map[string]*Node) *Node {
 	node, ok := nodesMap[name]
-	if !ok {
+	if !ok || name == "" {
 		node = &Node{name: name,
 			f: pass}
-		nodesMap[name] = node
+		if name != "" {
+			// Empty names shouldn't be stored
+			nodesMap[name] = node
+		}
 	}
 	return node
+}
+
+func BuildNodeList() map[string]*Node {
+	nodesMap := make(map[string]*Node)
+	for _, line := range strings.Split(dayseveninput, "\n") {
+		fields := strings.Fields(line)
+
+		logger.Printf("Building line: %s\n", line)
+		target := GetNode(fields[len(fields)-1], nodesMap)
+		chTarget := make(chan uint16)
+		target.RegisterUpstream(chTarget)
+
+		fields = fields[:len(fields)-2] // the last two fields will always be "->" "target"
+		switch len(fields) {
+		case 1:
+			// value -> target
+			// or
+			// from -> target
+			if value, err := strconv.ParseInt(fields[0], 10, 16); err != nil {
+				// fields[0] is a node name, not a value
+				from := GetNode(fields[0], nodesMap)
+				from.RegisterDownstream(chTarget)
+				from.f = pass
+			} else {
+				go func() {
+					value := uint16(value)
+					chTarget <- value
+				}()
+			}
+		case 2:
+			// NOT from -> target
+			if value, err := strconv.ParseInt(fields[1], 10, 16); err != nil {
+				// fields[1] is a node name
+				from := GetNode(fields[1], nodesMap)
+				from.RegisterDownstream(chTarget)
+				from.f = not
+			} else {
+				// fields[1] is a value
+				chTarget <- uint16(^value)
+			}
+		case 3:
+			// from1|val AND|OR from2|val -> target
+			// or
+			// from1|val LSHIFT|RSHIFT n -> target
+			gate := GetNode("", nodesMap)
+			gate.RegisterDownstream(chTarget)
+			chFrom1, chFrom2 := make(chan uint16), make(chan uint16)
+			gate.RegisterUpstream(chFrom1)
+			gate.RegisterUpstream(chFrom2)
+
+			if value, err := strconv.ParseInt(fields[0], 10, 16); err != nil {
+				// fields[0] is a Node name
+				from1 := GetNode(fields[0], nodesMap)
+				from1.RegisterDownstream(chFrom1)
+			} else {
+				// fields[0] is a value
+				go func(ch chan uint16, v uint16) { ch <- uint16(v) }(chFrom1, uint16(value))
+			}
+			if value, err := strconv.ParseInt(fields[2], 10, 16); err != nil {
+				from2 := GetNode(fields[2], nodesMap)
+				from2.RegisterDownstream(chFrom2)
+			} else {
+				go func(ch chan uint16, v uint16) { ch <- uint16(v) }(chFrom2, uint16(value))
+			}
+
+			switch fields[1] {
+			case "AND":
+				gate.f = and
+			case "OR":
+				gate.f = or
+			case "LSHIFT":
+				gate.f = lshift
+			case "RSHIFT":
+				gate.f = rshift
+			}
+			go gate.Start()
+		}
+	}
+	logger.Println("All done building logic chain!")
+	return nodesMap
 }
 
 // DaySeven runs the calculations for the Day Seven puzzle
@@ -123,86 +222,10 @@ func DaySeven(p *puzzle.Puzzle) {
 	}
 	logger = log.New(f, "", log.Lshortfile)
 
-	nodesMap := make(map[string]*Node)
-	for _, line := range strings.Split(dayseveninput, "\n") {
-		fields := strings.Fields(line)
+	nodesMap := BuildNodeList()
 
-		logger.Printf("Building line: %s\n", line)
-		target := GetNode(fields[len(fields)-1], nodesMap)
-		chTarget := make(chan int16)
-		target.RegisterUpstream(chTarget)
-
-		switch len(fields) {
-		case 3:
-			// value -> target
-			// or
-			// from -> target
-			if value, err := strconv.ParseInt(fields[0], 10, 16); err != nil {
-				// fields[0] is a node name, not a value
-				from := GetNode(fields[0], nodesMap)
-				from.RegisterDownstream(chTarget)
-				from.f = pass
-			} else {
-				go func() {
-					value := int16(value)
-					chTarget <- value
-				}()
-			}
-		case 4:
-			// NOT from -> target
-			from := GetNode(fields[1], nodesMap)
-			from.RegisterDownstream(chTarget)
-			from.f = not
-		case 5:
-			// from1|val AND|OR from2|val -> target
-			// or
-			// from1|val LSHIFT|RSHIFT n -> target
-			// TODO: Code currently fails because it assumes that
-			// the first value will always be a node, but it doesn't have to be
-			from1 := GetNode(fields[0], nodesMap)
-			chFrom1 := make(chan int16)
-			from1.RegisterDownstream(chFrom1)
-
-			switch fields[1] {
-			case "AND", "OR":
-				from2 := GetNode(fields[2], nodesMap)
-				chFrom2 := make(chan int16)
-				from2.RegisterDownstream(chFrom2)
-
-				// gates don't need to be recorded anywhere and can start immediately
-				gate := &Node{upstream: []chan int16{chFrom1, chFrom2},
-					downstream: []chan int16{chTarget}}
-				if fields[1] == "AND" {
-					gate.f = and
-				} else {
-					gate.f = or
-				}
-				go gate.Start()
-
-			case "LSHIFT", "RSHIFT":
-				chValue := make(chan int16)
-				if n, err := strconv.ParseInt(fields[2], 10, 16); err != nil {
-					panic("Bad input! " + line)
-				} else {
-					go func(chValue chan int16, n int16) { chValue <- n }(chValue, int16(n))
-				}
-
-				// gates don't need to be recorded anywhere and can start immediately
-				gate := &Node{upstream: []chan int16{chFrom1, chValue},
-					downstream: []chan int16{chTarget}}
-				gate.RegisterDownstream(chTarget)
-				if fields[1] == "LSHIFT" {
-					gate.f = lshift
-				} else {
-					gate.f = rshift
-				}
-				go gate.Start()
-			}
-		}
-	}
-	logger.Println("All done building logic chain!")
 	// register listener on node `a`
-	listener := make(chan int16)
+	listener := make(chan uint16)
 	if nodeA, ok := nodesMap["a"]; !ok {
 		panic("No node named ``a``")
 	} else {
@@ -212,8 +235,28 @@ func DaySeven(p *puzzle.Puzzle) {
 		go node.Start()
 	}
 	result := <-listener
-	p.AddSolution(strconv.Itoa(int(result)))
 	logger.Printf("Logged node a's output: %v\n", result)
+	p.AddSolution(strconv.Itoa(int(result)))
+
+	nodesMap = BuildNodeList()
+
+	chTemp := make(chan uint16)
+	go func() { chTemp <- result }()
+	nodesMap["b"].upstream = []chan uint16{chTemp}
+	logger.Printf("Reset node b to receive the original result")
+
+	// register listener again on node `a`
+	if nodeA, ok := nodesMap["a"]; !ok {
+		panic("No node named ``a``")
+	} else {
+		nodeA.RegisterDownstream(listener)
+	}
+	for _, node := range nodesMap {
+		go node.Start()
+	}
+	result2 := <-listener
+	logger.Printf("Logged node a's output: %#v\n", result2)
+	p.AddSolution(strconv.Itoa(int(result2)))
 }
 
 const dayseveninput = `af AND ah -> ai

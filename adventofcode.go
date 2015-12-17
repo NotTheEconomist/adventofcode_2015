@@ -62,12 +62,12 @@ func main() {
 	puzzles := make([]*puzzle.Puzzle, 0, puzzleCount)
 
 	// TODO: build puzzles
-	// initPuzzle(1, exercises.DayOne, &puzzles)
-	// initPuzzle(2, exercises.DayTwo, &puzzles)
-	// initPuzzle(3, exercises.DayThree, &puzzles)
-	// initPuzzle(4, exercises.DayFour, &puzzles)
-	// initPuzzle(5, exercises.DayFive, &puzzles)
-	// initPuzzle(6, exercises.DaySix, &puzzles)
+	initPuzzle(1, exercises.DayOne, &puzzles)
+	initPuzzle(2, exercises.DayTwo, &puzzles)
+	initPuzzle(3, exercises.DayThree, &puzzles)
+	initPuzzle(4, exercises.DayFour, &puzzles)
+	initPuzzle(5, exercises.DayFive, &puzzles)
+	initPuzzle(6, exercises.DaySix, &puzzles)
 	initPuzzle(7, exercises.DaySeven, &puzzles)
 
 	quit := make(chan bool)
